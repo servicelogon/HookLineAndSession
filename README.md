@@ -1,2 +1,5 @@
-# HookLineAndSession
-2026 Presentation for SecureWV 
+# Hook, Line & Session
+
+Presentation for the 2026 [SecureWV Security Conference](https://www.securewv.org/).
+
+
