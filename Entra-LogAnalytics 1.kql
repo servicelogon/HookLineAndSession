@@ -1,0 +1,209 @@
+	
+
+// ==========================================================================================
+// List of KQL Queries to use for Entra Log Analytics 
+
+██╗  ██╗ ██████╗ ██╗
+██║ ██╔╝██╔═══██╗██║
+█████╔╝ ██║   ██║██║
+██╔═██╗ ██║▄▄ ██║██║
+██║  ██╗╚██████╔╝███████╗
+╚═╝  ╚═╝ ╚══▀▀═╝ ╚══════╝
+
+// ==========================================================================================
+
+
+
+	// ==========================================================================================
+	// Generic queries
+	// ==========================================================================================
+
+	// Sign-Ins to a Specific App from Specific IP Addresses  
+	SigninLogs
+	| where AppDisplayName contains "" and (IPAddress contains "" or IPAddress contains "")
+	
+
+	// ==========================================================================================
+	// Passkey deployment queries
+	// ==========================================================================================
+
+	//Passkey Registrations over the last 24 hours (Table with User Info)
+	let AAGUIDMap = datatable(AAGUID: string, PasskeyProvider: string)
+	[
+		"00000000-0000-0000-0000-000000000000", "Unknown / No Attestation",
+		"adce0002-35bc-c60a-648b-0b25f1f05503", "Chrome on Mac",
+		"08987058-cadc-4b81-b6e1-30de50dcbe96", "Windows Hello Hardware",
+		"6028b017-b1d4-4c02-b4b3-afcdafc96bb2", "Windows Hello Hardware",
+		"9ddd1817-af5a-4672-a2b9-3e3dd95000a9", "Windows Hello Software",
+		"dd4ec289-e01d-41c9-bb89-70fa845d4bf2", "iCloud Keychain (Managed)",
+		"531126d6-e717-415c-9320-3d9aa6981239", "Dashlane",
+		"bada5566-a7aa-401f-bd96-45619a55120d", "1Password",
+		"b84e4048-15dc-4dd0-8640-f4f60813c8af", "NordPass",
+		"f3809540-7f14-49c1-a8b3-8f813b225541", "Enpass",
+		"771b48fd-d3d4-4f74-9232-fc157ab0507a", "Edge on Mac",
+		"39a5647e-1853-446c-a1f6-a79bae9f5bc7", "IDmelon",
+		"fdb141b2-5d84-443e-8a35-4698c205a502", "KeePassXC",
+		"9f77e279-a6e2-4d58-b700-31e5943c6a98", "Hypr Passwordless",
+		"fbfc3007-154e-4ecc-8c0b-6e020557d7bd", "iCloud Keychain",
+		"53414d53-554e-4700-0000-000000000000", "Samsung Pass",
+		"ea9b8d66-4d01-1d21-3ce4-b6b48cb575d4", "Google Password Manager",
+		"b93fd961-f2e6-462f-b122-82002247de78", "Android Authenticator with devicePubKey",
+		"6e96969e-a5cf-4aed-b6bf-8af0974e5da8", "Thales Bio iOS SDK",
+		"17290f1e-c212-34d0-1423-365d729f09d9", "Thales Bio Android SDK",
+		"c80dbd9a-533f-4a17-b941-1a2f1c7cedff", "HID Crescendo Key",
+		"54d9fee8-e621-4291-8b18-8f52b4b51e80", "HID Crescendo Key",
+		"b6773f95-7bdf-4c4b-8b08-5e2fdb0a4ac9", "HID Crescendo C3000",
+		"692db549-7ae5-44d5-a1e5-dd20a493b723", "HID Crescendo C3000",
+		"d7781bdb-2060-4a4e-9750-d5486f62b5f1", "YubiKey Bio",
+		"f8a011f3-8c0a-4d15-8006-17111f9edc7d", "Security Key by Yubico",
+		"fa2b99dc-9e39-4257-8f92-4a30d23c4118", "YubiKey 5 Series with NFC",
+		"2fc0579f-8113-47ea-b116-bb5a8db9202a", "YubiKey 5 Series with NFC",
+		"73bb0cd4-e502-49b8-9c6f-b59445bf720b", "YubiKey 5 FIPS Series",
+		"c1f9a0bc-1dd2-404a-b27f-8e29047a43fd", "YubiKey 5 FIPS Series with NFC",
+		"85203421-48f9-4355-9bc8-8a53846e5083", "YubiKey 5Ci FIPS",
+		"a02b08a8-c735-44a7-b26a-4d4a3a4f1d69", "YubiKey 5Ci",
+		"ee882879-721c-4913-9775-3dfcce97072a", "YubiKey 5 Series",
+		"cb69481e-8ff7-4039-93ec-0a2729a154a8", "YubiKey 5 Series",
+		"c5ef55ff-ad9a-4b9f-b580-adebafe026d0", "YubiKey 5Ci NFC"
+	];
+	AuditLogs
+	| where TimeGenerated > ago(24h)
+	| where OperationName has_any ("passkey", "Passkey", "FIDO")
+		or (ActivityDisplayName has_any ("security_info")
+			and TargetResources has_any ("passkey", "FIDO", "device-bound"))
+	| extend UserUPN = tostring(TargetResources[0].userPrincipalName)
+	| extend InitiatedBy = tostring(InitiatedBy.user.userPrincipalName)
+	| extend AAGUID = tolower(tostring(AdditionalDetails[1].value))
+	| lookup kind=leftouter AAGUIDMap on AAGUID
+	| extend PasskeyProvider = iif(isempty(PasskeyProvider), "Microsoft Authenticator", PasskeyProvider)
+	| project TimeGenerated, UserUPN, InitiatedBy, Result, AAGUID, PasskeyProvider
+	| summarize arg_min(TimeGenerated, *) by UserUPN
+	| sort by TimeGenerated desc
+	
+	
+	//Passkey Registrations over the last 24 hours (chart) 
+	AuditLogs
+	| where TimeGenerated > ago(24h)
+	| where OperationName has_any ("passkey", "Passkey", "FIDO")
+	    or (ActivityDisplayName has_any ("security_info")
+	        and TargetResources has_any ("passkey", "FIDO", "device-bound"))
+	| extend UserUPN = tostring(TargetResources[0].userPrincipalName)
+	| summarize UniqueRegistrations = count() by bin(TimeGenerated, 1h)
+	| order by TimeGenerated asc
+	| render timechart 
+	
+	
+	//Passkey Registrations (Total) 
+	AuditLogs
+	| where TimeGenerated > ago(24h)
+	| where OperationName has_any ("passkey", "Passkey", "FIDO")
+	    or (ActivityDisplayName has_any ("security_info")
+	        and TargetResources has_any ("passkey", "FIDO", "device-bound"))
+	| extend UserUPN = tostring(TargetResources[0].userPrincipalName)
+	| summarize FirstRegistration = arg_min(TimeGenerated, *) by UserUPN
+	| summarize UniqueRegistrations = count() by FirstRegistration
+    | summarize TotalRegistrations = count() by UniqueRegistrations
+	| render barchart 
+
+	//Users prompted to satisfy MFA 
+	SigninLogs
+	| where TimeGenerated > ago(30d)
+	| where ResultType in ("50074", "500121")
+	| where UserType != "Guest"
+	| where not(UserPrincipalName has "#EXT#")
+	| summarize
+    	TotalSignIns = count(),
+   		 LastSignIn = max(TimeGenerated)
+    by UserPrincipalName
+
+	//Users with no MFA-related sign-ins
+	SigninLogs
+	| where TimeGenerated > ago(30d)
+	| where ResultType == 0
+	| where UserType != "Guest"
+	| where not(UserPrincipalName has "#EXT#")
+	| summarize
+    	TotalSignIns = count(),
+    	MFASignIns = countif(AuthenticationRequirement == "multiFactorAuthentication"),
+    	LastSignIn = max(TimeGenerated)
+    	by UserPrincipalName
+	| where MFASignIns == 0
+
+
+
+
+
+	// ==========================================================================================
+	// Privileged Actions 
+	// ==========================================================================================
+
+	// PIM Role Activations
+	AuditLogs
+	| where OperationName contains "PIM"
+	| extend UserUPN = tostring(InitiatedBy.user.userPrincipalName)
+	| extend TargetUPN = tostring(TargetResources[0].userPrincipalName)
+	| extend RoleName = tostring(TargetResources[1].displayName)
+	| extend ActivationReason = tostring(AdditionalDetails[0].value)
+	//Filter by user 
+	//| where UserUPN contains ""
+	//    or TargetUPN contains ""
+	| project TimeGenerated, UserUPN, TargetUPN, RoleName, ActivationReason, Result
+	| order by TimeGenerated desc 
+
+
+
+
+
+
+
+	//=====================================================================================================================================================================	
+	// Threat Hunting 
+	//=====================================================================================================================================================================
+
+
+	//AiTM - Based on Unique Token Identifier 
+	SigninLogs
+	| where TimeGenerated > ago(30d)
+	| summarize
+		IPs = make_set(IPAddress, 10),
+		ASNs = make_set(AutonomousSystemNumber, 10),
+		Countries = make_set(Location, 10)
+		by UserPrincipalName, UniqueTokenIdentifier
+	| where array_length(ASNs) > 1 or array_length(Countries) > 1
+	| project UserPrincipalName, IPs, ASNs, Countries, UniqueTokenIdentifier
+
+	//AiTM with obfuscated location
+	SigninLogs
+	| where TimeGenerated > ago(7d)
+	| where AppDisplayName == "OfficeHome"
+	| where IPAddress has ":"
+	| where isempty(Location)
+	| project TimeGenerated, UserPrincipalName, UserDisplayName, IPAddress, Location, AppDisplayName, ResultType, ResultDescription, ClientAppUsed, ConditionalAccessStatus
+	| sort by TimeGenerated desc
+
+    //Session Token Theft - Same Session ID where IP and OS changed and (Browser or Device) changed. 
+	SigninLogs
+	| where TimeGenerated > ago(7d)
+	| extend Browser = tostring(split(tostring(DeviceDetail.browser), " ")[0])
+	| extend OS = tostring(split(tostring(DeviceDetail.operatingSystem), "")[0])
+	| extend DeviceID = tostring(DeviceDetail.deviceId)
+	| where isnotempty(Browser) and isnotempty(OS)
+	| summarize IPs = make_set(IPAddress),
+		Countries = make_set(tostring(LocationDetails.countryOrRegion)),
+		Browsers = make_set(Browser),
+		OSVersions = make_set(OS),
+		DeviceIDs = make_set(DeviceID),
+		FirstSeen = min(TimeGenerated),
+		LastSeen = max(TimeGenerated),
+		Count = count() by UserPrincipalName, SessionId
+	| extend MultiIP = array_length(IPs) > 1
+	| extend MultiBrowser = array_length(Browsers) > 1
+	| extend MultiOS = array_length (OSVersions) > 1
+	| extend MultiDevice = array_length(DeviceIDs) > 1
+	| where MultiIP and MultiOS and (MultiBrowser or MultiDevice)
+	| project UserPrincipalName, SessionId, MultiIP, MultiBrowser, Browsers,
+		MultiOS, MultiDevice, IPs, Browsers, OSVersions, DeviceIDs, Countries, FirstSeen, LastSeen, Count
+	| sort by Count desc
+
+
+
